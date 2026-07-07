@@ -12,6 +12,7 @@ class SessionManager {
 public:
     DiagnosticSession current() const;
     bool change(std::uint8_t sub_function);
+    void reset();
     bool is_write_allowed() const;
     std::string current_name() const;
 

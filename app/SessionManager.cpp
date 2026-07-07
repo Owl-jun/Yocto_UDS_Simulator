@@ -20,6 +20,11 @@ bool SessionManager::change(std::uint8_t sub_function)
     return false;
 }
 
+void SessionManager::reset()
+{
+    current_ = DiagnosticSession::Default;
+}
+
 bool SessionManager::is_write_allowed() const
 {
     return current_ == DiagnosticSession::Extended;

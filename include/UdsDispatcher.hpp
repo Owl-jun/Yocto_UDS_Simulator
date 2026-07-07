@@ -14,8 +14,10 @@ public:
 private:
     ByteVector dispatch(const ByteVector& request);
     ByteVector handle_session_control(const ByteVector& request);
+    ByteVector handle_ecu_reset(const ByteVector& request);
     ByteVector handle_read_did(const ByteVector& request);
     ByteVector handle_write_did(const ByteVector& request);
+    ByteVector handle_read_dtc_information(const ByteVector& request);
 
     static ByteVector negative_response(std::uint8_t sid, std::uint8_t nrc);
 

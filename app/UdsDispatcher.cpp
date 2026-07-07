@@ -8,10 +8,13 @@
 namespace {
 
 constexpr std::uint8_t kSidDiagnosticSessionControl = 0x10;
+constexpr std::uint8_t kSidEcuReset = 0x11;
+constexpr std::uint8_t kSidReadDtcInformation = 0x19;
 constexpr std::uint8_t kSidReadDataByIdentifier = 0x22;
 constexpr std::uint8_t kSidWriteDataByIdentifier = 0x2E;
 
 constexpr std::uint8_t kNrcIncorrectMessageLength = 0x13;
+constexpr std::uint8_t kNrcSubFunctionNotSupported = 0x12;
 constexpr std::uint8_t kNrcConditionsNotCorrect = 0x22;
 constexpr std::uint8_t kNrcRequestOutOfRange = 0x31;
 constexpr std::uint8_t kNrcServiceNotSupported = 0x11;
@@ -89,6 +92,10 @@ ByteVector UdsDispatcher::dispatch(const ByteVector& request)
     switch (request[0]) {
     case kSidDiagnosticSessionControl:
         return handle_session_control(request);
+    case kSidEcuReset:
+        return handle_ecu_reset(request);
+    case kSidReadDtcInformation:
+        return handle_read_dtc_information(request);
     case kSidReadDataByIdentifier:
         return handle_read_did(request);
     case kSidWriteDataByIdentifier:
@@ -110,6 +117,21 @@ ByteVector UdsDispatcher::handle_session_control(const ByteVector& request)
 
     Logger::info("Session changed to " + session_manager_.current_name());
     return ByteVector {static_cast<std::uint8_t>(kSidDiagnosticSessionControl + 0x40U), request[1]};
+}
+
+ByteVector UdsDispatcher::handle_ecu_reset(const ByteVector& request)
+{
+    if (request.size() != 2U) {
+        return negative_response(kSidEcuReset, kNrcIncorrectMessageLength);
+    }
+
+    if (request[1] != 0x01U && request[1] != 0x03U) {
+        return negative_response(kSidEcuReset, kNrcSubFunctionNotSupported);
+    }
+
+    session_manager_.reset();
+    Logger::info("ECU reset simulated, session returned to default");
+    return ByteVector {static_cast<std::uint8_t>(kSidEcuReset + 0x40U), request[1]};
 }
 
 ByteVector UdsDispatcher::handle_read_did(const ByteVector& request)
@@ -146,6 +168,32 @@ ByteVector UdsDispatcher::handle_write_did(const ByteVector& request)
     }
 
     return ByteVector {static_cast<std::uint8_t>(kSidWriteDataByIdentifier + 0x40U), request[1], request[2]};
+}
+
+ByteVector UdsDispatcher::handle_read_dtc_information(const ByteVector& request)
+{
+    if (request.size() != 3U) {
+        return negative_response(kSidReadDtcInformation, kNrcIncorrectMessageLength);
+    }
+
+    constexpr std::uint8_t kReportDtcByStatusMask = 0x02;
+    if (request[1] != kReportDtcByStatusMask) {
+        return negative_response(kSidReadDtcInformation, kNrcSubFunctionNotSupported);
+    }
+
+    constexpr std::uint8_t kStatusAvailabilityMask = 0xFF;
+    constexpr std::uint32_t kExampleDtc = 0x123456;
+    constexpr std::uint8_t kExampleStatus = 0x08;
+
+    return ByteVector {
+        static_cast<std::uint8_t>(kSidReadDtcInformation + 0x40U),
+        request[1],
+        kStatusAvailabilityMask,
+        static_cast<std::uint8_t>((kExampleDtc >> 16U) & 0xFFU),
+        static_cast<std::uint8_t>((kExampleDtc >> 8U) & 0xFFU),
+        static_cast<std::uint8_t>(kExampleDtc & 0xFFU),
+        kExampleStatus,
+    };
 }
 
 ByteVector UdsDispatcher::negative_response(std::uint8_t sid, std::uint8_t nrc)

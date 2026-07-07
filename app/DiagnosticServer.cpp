@@ -9,10 +9,7 @@ DiagnosticServer::DiagnosticServer(DiagnosticConfig config)
         return dispatcher_.handle_line(request);
     })
 {
-    did_manager_.set(0xF190, config_.vin);
-    did_manager_.set(0xF187, "SW-1.0.0");
-    did_manager_.set(0xF188, "HW-QEMU-X86_64");
-    did_manager_.set(0xF18C, "SIM-0001");
+    did_manager_.reset_defaults(config_.vin);
 }
 
 void DiagnosticServer::run()
