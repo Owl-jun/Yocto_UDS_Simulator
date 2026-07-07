@@ -1,0 +1,24 @@
+#pragma once
+
+#include "DidManager.hpp"
+#include "SessionManager.hpp"
+
+#include <string>
+
+class UdsDispatcher {
+public:
+    UdsDispatcher(DidManager& did_manager, SessionManager& session_manager);
+
+    std::string handle_line(const std::string& request_line);
+
+private:
+    ByteVector dispatch(const ByteVector& request);
+    ByteVector handle_session_control(const ByteVector& request);
+    ByteVector handle_read_did(const ByteVector& request);
+    ByteVector handle_write_did(const ByteVector& request);
+
+    static ByteVector negative_response(std::uint8_t sid, std::uint8_t nrc);
+
+    DidManager& did_manager_;
+    SessionManager& session_manager_;
+};

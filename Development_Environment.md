@@ -154,11 +154,12 @@ make -j$(nproc)
 sudo apt install -y \
 gawk \
 wget \
-git-core \
+git \
 diffstat \
 unzip \
 texinfo \
 gcc \
+g++ \
 build-essential \
 chrpath \
 socat \
@@ -171,7 +172,6 @@ debianutils \
 iputils-ping \
 python3-git \
 python3-jinja2 \
-libegl1-mesa \
 libsdl1.2-dev \
 xterm \
 zstd \
@@ -184,7 +184,9 @@ file
 # 10. Download Yocto
 
 ```bash
-git clone git://git.yoctoproject.org/poky
+git clone https://git.yoctoproject.org/poky
+
+git clone --depth 1 -b scarthgap https://github.com/yoctoproject/poky.git
 ```
 
 ---
@@ -203,6 +205,10 @@ source oe-init-build-env
 
 ```bash
 bitbake core-image-minimal
+
+# perl-native 빌드 오류시.
+export PARALLEL_MAKE="-j1"
+bitbake -c clean perl-native
 ```
 
 ---

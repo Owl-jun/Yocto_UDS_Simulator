@@ -1,0 +1,11 @@
+[Unit]
+Description=UDS Diagnostic ECU Simulator
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/diagnosticd /etc/diagnostic.conf
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
