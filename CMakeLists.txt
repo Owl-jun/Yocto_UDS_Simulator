@@ -18,6 +18,7 @@ add_executable(diagnosticd
     app/Config.cpp
     app/DiagnosticServer.cpp
     app/DidManager.cpp
+    app/DtcManager.cpp
     app/Logger.cpp
     app/SessionManager.cpp
     app/TcpServer.cpp

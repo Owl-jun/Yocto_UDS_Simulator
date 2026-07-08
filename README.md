@@ -152,7 +152,8 @@ printf '10 03\n2E F1 8C 41 42 43\n22 F1 8C\n' | nc 127.0.0.1 5000
 | --- | --- | --- |
 | `0x10` | Diagnostic Session Control | Default Session(`0x01`), Extended Session(`0x03`) 지원 |
 | `0x11` | ECU Reset | Hard Reset(`0x01`), Soft Reset(`0x03`) 시뮬레이션. 세션을 Default로 복귀 |
-| `0x19` | ReadDTCInformation | `reportDTCByStatusMask(0x02)` 지원. 예시 DTC `0x123456`, status `0x08` 반환 |
+| `0x14` | ClearDiagnosticInformation | Extended Session에서 전체 DTC 그룹(`FF FF FF`) 삭제 지원 |
+| `0x19` | ReadDTCInformation | `reportDTCByStatusMask(0x02)` 지원. status mask에 맞는 저장 DTC 반환 |
 | `0x22` | ReadDataByIdentifier | 등록된 DID 값 읽기 |
 | `0x27` | SecurityAccess | Extended Session에서 seed(`0x01`) 요청, key(`0x02`) 전송 지원 |
 | `0x2E` | WriteDataByIdentifier | Extended Session에서만 등록된 DID 값 쓰기 |
@@ -194,6 +195,12 @@ printf '11 01\n' | nc 127.0.0.1 5000
 
 # DTC 읽기
 printf '19 02 FF\n' | nc 127.0.0.1 5000
+
+# confirmedDTC(status 0x08)만 읽기
+printf '19 02 08\n' | nc 127.0.0.1 5000
+
+# Extended Session에서 전체 DTC 삭제 후 다시 읽기
+printf '10 03\n14 FF FF FF\n19 02 FF\n' | nc 127.0.0.1 5000
 
 # SecurityAccess 후 self-test routine 시작/결과 조회/중지
 printf '10 03\n27 01\n27 02 ED CB\n31 01 FF 00\n31 03 FF 00\n31 02 FF 00\n' | nc 127.0.0.1 5000
@@ -257,6 +264,7 @@ runqemu tmp/deploy/images/qemux86-64/diagnostic-image-qemux86-64.rootfs.qemuboot
 * newline 기반 hex request/response 처리
 * UDS Dispatcher
 * DID Manager
+* DTC Manager
 * Session Manager
 * Logger
 * Config loader
@@ -270,6 +278,5 @@ runqemu tmp/deploy/images/qemux86-64/diagnostic-image-qemux86-64.rootfs.qemuboot
 남은 작업 후보:
 
 * Tester 전용 클라이언트 작성
-* DTC 저장소/상태 관리 고도화
 * 단위 테스트 추가
 * 여러 클라이언트 동시 처리

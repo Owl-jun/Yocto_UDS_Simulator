@@ -9,11 +9,15 @@ namespace {
 
 constexpr std::uint8_t kSidDiagnosticSessionControl = 0x10;
 constexpr std::uint8_t kSidEcuReset = 0x11;
+constexpr std::uint8_t kSidClearDiagnosticInformation = 0x14;
 constexpr std::uint8_t kSidReadDtcInformation = 0x19;
 constexpr std::uint8_t kSidReadDataByIdentifier = 0x22;
 constexpr std::uint8_t kSidSecurityAccess = 0x27;
 constexpr std::uint8_t kSidWriteDataByIdentifier = 0x2E;
 constexpr std::uint8_t kSidRoutineControl = 0x31;
+constexpr std::uint8_t kSidNegativeResponse = 0x7F;
+constexpr std::uint8_t kUnknownSid = 0x00;
+constexpr std::uint8_t kPositiveResponseOffset = 0x40;
 
 constexpr std::uint8_t kNrcIncorrectMessageLength = 0x13;
 constexpr std::uint8_t kNrcSubFunctionNotSupported = 0x12;
@@ -28,6 +32,45 @@ constexpr std::uint8_t kSecuritySeedLow = 0x34;
 constexpr std::uint8_t kSecurityKeyHigh = static_cast<std::uint8_t>(kSecuritySeedHigh ^ 0xFFU);
 constexpr std::uint8_t kSecurityKeyLow = static_cast<std::uint8_t>(kSecuritySeedLow ^ 0xFFU);
 constexpr std::uint16_t kSelfTestRoutineId = 0xFF00;
+constexpr std::uint32_t kAllDtcGroup = 0xFFFFFF;
+constexpr std::uint8_t kReportDtcByStatusMask = 0x02;
+constexpr std::uint8_t kRequestSeed = 0x01;
+constexpr std::uint8_t kSendKey = 0x02;
+constexpr std::uint8_t kStartRoutine = 0x01;
+constexpr std::uint8_t kStopRoutine = 0x02;
+constexpr std::uint8_t kRequestRoutineResults = 0x03;
+constexpr std::uint8_t kHardReset = 0x01;
+constexpr std::uint8_t kSoftReset = 0x03;
+constexpr std::uint8_t kRoutineOk = 0x00;
+constexpr std::uint8_t kRoutineRunning = 0x01;
+constexpr std::uint8_t kByteMask = 0xFF;
+constexpr unsigned int kHighByteShift = 8U;
+constexpr unsigned int kDtcHighByteShift = 16U;
+constexpr unsigned int kDtcMiddleByteShift = 8U;
+
+constexpr std::size_t kSidIndex = 0U;
+constexpr std::size_t kSubFunctionIndex = 1U;
+constexpr std::size_t kDidHighByteIndex = 1U;
+constexpr std::size_t kDidLowByteIndex = 2U;
+constexpr std::size_t kDtcGroupHighByteIndex = 1U;
+constexpr std::size_t kDtcGroupMiddleByteIndex = 2U;
+constexpr std::size_t kDtcGroupLowByteIndex = 3U;
+constexpr std::size_t kDtcStatusMaskIndex = 2U;
+constexpr std::size_t kRoutineIdHighByteIndex = 2U;
+constexpr std::size_t kRoutineIdLowByteIndex = 3U;
+constexpr std::size_t kSecurityKeyHighIndex = 2U;
+constexpr std::size_t kSecurityKeyLowIndex = 3U;
+constexpr std::size_t kWriteDidValueIndex = 3U;
+
+constexpr std::size_t kSessionControlRequestLength = 2U;
+constexpr std::size_t kEcuResetRequestLength = 2U;
+constexpr std::size_t kClearDtcRequestLength = 4U;
+constexpr std::size_t kReadDidRequestLength = 3U;
+constexpr std::size_t kMinimumWriteDidRequestLength = 4U;
+constexpr std::size_t kReadDtcRequestLength = 3U;
+constexpr std::size_t kSecuritySeedRequestLength = 2U;
+constexpr std::size_t kSecurityKeyRequestLength = 4U;
+constexpr std::size_t kRoutineControlRequestLength = 4U;
 
 ByteVector parse_hex_line(const std::string& line)
 {
@@ -68,13 +111,14 @@ std::string to_hex_line(const ByteVector& bytes)
 
 std::uint16_t read_did_from_request(const ByteVector& request)
 {
-    return static_cast<std::uint16_t>((request[1] << 8U) | request[2]);
+    return static_cast<std::uint16_t>((request[kDidHighByteIndex] << kHighByteShift) | request[kDidLowByteIndex]);
 }
 
 } // namespace
 
-UdsDispatcher::UdsDispatcher(DidManager& did_manager, SessionManager& session_manager)
+UdsDispatcher::UdsDispatcher(DidManager& did_manager, DtcManager& dtc_manager, SessionManager& session_manager)
     : did_manager_(did_manager)
+    , dtc_manager_(dtc_manager)
     , session_manager_(session_manager)
 {
 }
@@ -89,21 +133,23 @@ std::string UdsDispatcher::handle_line(const std::string& request_line)
         return to_hex_line(response);
     } catch (const std::exception& error) {
         Logger::error(std::string("Invalid request: ") + error.what());
-        return "7F 00 13";
+        return to_hex_line(negative_response(kUnknownSid, kNrcIncorrectMessageLength));
     }
 }
 
 ByteVector UdsDispatcher::dispatch(const ByteVector& request)
 {
     if (request.empty()) {
-        return negative_response(0x00, kNrcIncorrectMessageLength);
+        return negative_response(kUnknownSid, kNrcIncorrectMessageLength);
     }
 
-    switch (request[0]) {
+    switch (request[kSidIndex]) {
     case kSidDiagnosticSessionControl:
         return handle_session_control(request);
     case kSidEcuReset:
         return handle_ecu_reset(request);
+    case kSidClearDiagnosticInformation:
+        return handle_clear_diagnostic_information(request);
     case kSidReadDtcInformation:
         return handle_read_dtc_information(request);
     case kSidReadDataByIdentifier:
@@ -115,17 +161,17 @@ ByteVector UdsDispatcher::dispatch(const ByteVector& request)
     case kSidRoutineControl:
         return handle_routine_control(request);
     default:
-        return negative_response(request[0], kNrcServiceNotSupported);
+        return negative_response(request[kSidIndex], kNrcServiceNotSupported);
     }
 }
 
 ByteVector UdsDispatcher::handle_session_control(const ByteVector& request)
 {
-    if (request.size() != 2U) {
+    if (request.size() != kSessionControlRequestLength) {
         return negative_response(kSidDiagnosticSessionControl, kNrcIncorrectMessageLength);
     }
 
-    if (!session_manager_.change(request[1])) {
+    if (!session_manager_.change(request[kSubFunctionIndex])) {
         return negative_response(kSidDiagnosticSessionControl, kNrcRequestOutOfRange);
     }
 
@@ -136,16 +182,16 @@ ByteVector UdsDispatcher::handle_session_control(const ByteVector& request)
     }
 
     Logger::info("Session changed to " + session_manager_.current_name());
-    return ByteVector {static_cast<std::uint8_t>(kSidDiagnosticSessionControl + 0x40U), request[1]};
+    return ByteVector {static_cast<std::uint8_t>(kSidDiagnosticSessionControl + kPositiveResponseOffset), request[kSubFunctionIndex]};
 }
 
 ByteVector UdsDispatcher::handle_ecu_reset(const ByteVector& request)
 {
-    if (request.size() != 2U) {
+    if (request.size() != kEcuResetRequestLength) {
         return negative_response(kSidEcuReset, kNrcIncorrectMessageLength);
     }
 
-    if (request[1] != 0x01U && request[1] != 0x03U) {
+    if (request[kSubFunctionIndex] != kHardReset && request[kSubFunctionIndex] != kSoftReset) {
         return negative_response(kSidEcuReset, kNrcSubFunctionNotSupported);
     }
 
@@ -154,12 +200,33 @@ ByteVector UdsDispatcher::handle_ecu_reset(const ByteVector& request)
     security_unlocked_ = false;
     self_test_running_ = false;
     Logger::info("ECU reset simulated, session returned to default");
-    return ByteVector {static_cast<std::uint8_t>(kSidEcuReset + 0x40U), request[1]};
+    return ByteVector {static_cast<std::uint8_t>(kSidEcuReset + kPositiveResponseOffset), request[kSubFunctionIndex]};
+}
+
+ByteVector UdsDispatcher::handle_clear_diagnostic_information(const ByteVector& request)
+{
+    if (request.size() != kClearDtcRequestLength) {
+        return negative_response(kSidClearDiagnosticInformation, kNrcIncorrectMessageLength);
+    }
+
+    if (session_manager_.current() != DiagnosticSession::Extended) {
+        return negative_response(kSidClearDiagnosticInformation, kNrcConditionsNotCorrect);
+    }
+
+    const auto group_of_dtc = (static_cast<std::uint32_t>(request[kDtcGroupHighByteIndex]) << kDtcHighByteShift)
+        | (static_cast<std::uint32_t>(request[kDtcGroupMiddleByteIndex]) << kDtcMiddleByteShift)
+        | request[kDtcGroupLowByteIndex];
+    if (group_of_dtc != kAllDtcGroup) {
+        return negative_response(kSidClearDiagnosticInformation, kNrcRequestOutOfRange);
+    }
+
+    dtc_manager_.clear_all();
+    return ByteVector {static_cast<std::uint8_t>(kSidClearDiagnosticInformation + kPositiveResponseOffset)};
 }
 
 ByteVector UdsDispatcher::handle_read_did(const ByteVector& request)
 {
-    if (request.size() != 3U) {
+    if (request.size() != kReadDidRequestLength) {
         return negative_response(kSidReadDataByIdentifier, kNrcIncorrectMessageLength);
     }
 
@@ -169,14 +236,18 @@ ByteVector UdsDispatcher::handle_read_did(const ByteVector& request)
         return negative_response(kSidReadDataByIdentifier, kNrcRequestOutOfRange);
     }
 
-    ByteVector response {static_cast<std::uint8_t>(kSidReadDataByIdentifier + 0x40U), request[1], request[2]};
+    ByteVector response {
+        static_cast<std::uint8_t>(kSidReadDataByIdentifier + kPositiveResponseOffset),
+        request[kDidHighByteIndex],
+        request[kDidLowByteIndex],
+    };
     response.insert(response.end(), value->begin(), value->end());
     return response;
 }
 
 ByteVector UdsDispatcher::handle_write_did(const ByteVector& request)
 {
-    if (request.size() < 4U) {
+    if (request.size() < kMinimumWriteDidRequestLength) {
         return negative_response(kSidWriteDataByIdentifier, kNrcIncorrectMessageLength);
     }
 
@@ -185,43 +256,47 @@ ByteVector UdsDispatcher::handle_write_did(const ByteVector& request)
     }
 
     const auto did = read_did_from_request(request);
-    const ByteVector value(request.begin() + 3, request.end());
+    const ByteVector value(request.begin() + kWriteDidValueIndex, request.end());
     if (!did_manager_.write(did, value)) {
         return negative_response(kSidWriteDataByIdentifier, kNrcRequestOutOfRange);
     }
 
-    return ByteVector {static_cast<std::uint8_t>(kSidWriteDataByIdentifier + 0x40U), request[1], request[2]};
+    return ByteVector {
+        static_cast<std::uint8_t>(kSidWriteDataByIdentifier + kPositiveResponseOffset),
+        request[kDidHighByteIndex],
+        request[kDidLowByteIndex],
+    };
 }
 
 ByteVector UdsDispatcher::handle_read_dtc_information(const ByteVector& request)
 {
-    if (request.size() != 3U) {
+    if (request.size() != kReadDtcRequestLength) {
         return negative_response(kSidReadDtcInformation, kNrcIncorrectMessageLength);
     }
 
-    constexpr std::uint8_t kReportDtcByStatusMask = 0x02;
-    if (request[1] != kReportDtcByStatusMask) {
+    if (request[kSubFunctionIndex] != kReportDtcByStatusMask) {
         return negative_response(kSidReadDtcInformation, kNrcSubFunctionNotSupported);
     }
 
-    constexpr std::uint8_t kStatusAvailabilityMask = 0xFF;
-    constexpr std::uint32_t kExampleDtc = 0x123456;
-    constexpr std::uint8_t kExampleStatus = 0x08;
-
-    return ByteVector {
-        static_cast<std::uint8_t>(kSidReadDtcInformation + 0x40U),
-        request[1],
-        kStatusAvailabilityMask,
-        static_cast<std::uint8_t>((kExampleDtc >> 16U) & 0xFFU),
-        static_cast<std::uint8_t>((kExampleDtc >> 8U) & 0xFFU),
-        static_cast<std::uint8_t>(kExampleDtc & 0xFFU),
-        kExampleStatus,
+    ByteVector response {
+        static_cast<std::uint8_t>(kSidReadDtcInformation + kPositiveResponseOffset),
+        request[kSubFunctionIndex],
+        dtc_manager_.status_availability_mask(),
     };
+    const auto dtcs = dtc_manager_.read_by_status_mask(request[kDtcStatusMaskIndex]);
+    for (const auto& dtc : dtcs) {
+        response.push_back(static_cast<std::uint8_t>((dtc.code >> kDtcHighByteShift) & kByteMask));
+        response.push_back(static_cast<std::uint8_t>((dtc.code >> kDtcMiddleByteShift) & kByteMask));
+        response.push_back(static_cast<std::uint8_t>(dtc.code & kByteMask));
+        response.push_back(dtc.status);
+    }
+
+    return response;
 }
 
 ByteVector UdsDispatcher::handle_security_access(const ByteVector& request)
 {
-    if (request.size() != 2U && request.size() != 4U) {
+    if (request.size() != kSecuritySeedRequestLength && request.size() != kSecurityKeyRequestLength) {
         return negative_response(kSidSecurityAccess, kNrcIncorrectMessageLength);
     }
 
@@ -229,26 +304,23 @@ ByteVector UdsDispatcher::handle_security_access(const ByteVector& request)
         return negative_response(kSidSecurityAccess, kNrcConditionsNotCorrect);
     }
 
-    constexpr std::uint8_t kRequestSeed = 0x01;
-    constexpr std::uint8_t kSendKey = 0x02;
-
-    if (request[1] == kRequestSeed) {
-        if (request.size() != 2U) {
+    if (request[kSubFunctionIndex] == kRequestSeed) {
+        if (request.size() != kSecuritySeedRequestLength) {
             return negative_response(kSidSecurityAccess, kNrcIncorrectMessageLength);
         }
 
         security_seed_issued_ = true;
         security_unlocked_ = false;
         return ByteVector {
-            static_cast<std::uint8_t>(kSidSecurityAccess + 0x40U),
-            request[1],
+            static_cast<std::uint8_t>(kSidSecurityAccess + kPositiveResponseOffset),
+            request[kSubFunctionIndex],
             kSecuritySeedHigh,
             kSecuritySeedLow,
         };
     }
 
-    if (request[1] == kSendKey) {
-        if (request.size() != 4U) {
+    if (request[kSubFunctionIndex] == kSendKey) {
+        if (request.size() != kSecurityKeyRequestLength) {
             return negative_response(kSidSecurityAccess, kNrcIncorrectMessageLength);
         }
 
@@ -256,13 +328,13 @@ ByteVector UdsDispatcher::handle_security_access(const ByteVector& request)
             return negative_response(kSidSecurityAccess, kNrcRequestSequenceError);
         }
 
-        if (request[2] != kSecurityKeyHigh || request[3] != kSecurityKeyLow) {
+        if (request[kSecurityKeyHighIndex] != kSecurityKeyHigh || request[kSecurityKeyLowIndex] != kSecurityKeyLow) {
             security_unlocked_ = false;
             return negative_response(kSidSecurityAccess, kNrcInvalidKey);
         }
 
         security_unlocked_ = true;
-        return ByteVector {static_cast<std::uint8_t>(kSidSecurityAccess + 0x40U), request[1]};
+        return ByteVector {static_cast<std::uint8_t>(kSidSecurityAccess + kPositiveResponseOffset), request[kSubFunctionIndex]};
     }
 
     return negative_response(kSidSecurityAccess, kNrcSubFunctionNotSupported);
@@ -270,7 +342,7 @@ ByteVector UdsDispatcher::handle_security_access(const ByteVector& request)
 
 ByteVector UdsDispatcher::handle_routine_control(const ByteVector& request)
 {
-    if (request.size() != 4U) {
+    if (request.size() != kRoutineControlRequestLength) {
         return negative_response(kSidRoutineControl, kNrcIncorrectMessageLength);
     }
 
@@ -278,28 +350,42 @@ ByteVector UdsDispatcher::handle_routine_control(const ByteVector& request)
         return negative_response(kSidRoutineControl, kNrcConditionsNotCorrect);
     }
 
-    const auto routine_id = static_cast<std::uint16_t>((request[2] << 8U) | request[3]);
+    const auto routine_id = static_cast<std::uint16_t>((request[kRoutineIdHighByteIndex] << kHighByteShift) | request[kRoutineIdLowByteIndex]);
     if (routine_id != kSelfTestRoutineId) {
         return negative_response(kSidRoutineControl, kNrcRequestOutOfRange);
     }
 
-    constexpr std::uint8_t kStartRoutine = 0x01;
-    constexpr std::uint8_t kStopRoutine = 0x02;
-    constexpr std::uint8_t kRequestRoutineResults = 0x03;
-
-    if (request[1] == kStartRoutine) {
+    if (request[kSubFunctionIndex] == kStartRoutine) {
         self_test_running_ = true;
-        return ByteVector {static_cast<std::uint8_t>(kSidRoutineControl + 0x40U), request[1], request[2], request[3], 0x00};
+        return ByteVector {
+            static_cast<std::uint8_t>(kSidRoutineControl + kPositiveResponseOffset),
+            request[kSubFunctionIndex],
+            request[kRoutineIdHighByteIndex],
+            request[kRoutineIdLowByteIndex],
+            kRoutineOk,
+        };
     }
 
-    if (request[1] == kStopRoutine) {
+    if (request[kSubFunctionIndex] == kStopRoutine) {
         self_test_running_ = false;
-        return ByteVector {static_cast<std::uint8_t>(kSidRoutineControl + 0x40U), request[1], request[2], request[3], 0x00};
+        return ByteVector {
+            static_cast<std::uint8_t>(kSidRoutineControl + kPositiveResponseOffset),
+            request[kSubFunctionIndex],
+            request[kRoutineIdHighByteIndex],
+            request[kRoutineIdLowByteIndex],
+            kRoutineOk,
+        };
     }
 
-    if (request[1] == kRequestRoutineResults) {
-        const std::uint8_t status = self_test_running_ ? 0x01U : 0x00U;
-        return ByteVector {static_cast<std::uint8_t>(kSidRoutineControl + 0x40U), request[1], request[2], request[3], status};
+    if (request[kSubFunctionIndex] == kRequestRoutineResults) {
+        const std::uint8_t status = self_test_running_ ? kRoutineRunning : kRoutineOk;
+        return ByteVector {
+            static_cast<std::uint8_t>(kSidRoutineControl + kPositiveResponseOffset),
+            request[kSubFunctionIndex],
+            request[kRoutineIdHighByteIndex],
+            request[kRoutineIdLowByteIndex],
+            status,
+        };
     }
 
     return negative_response(kSidRoutineControl, kNrcSubFunctionNotSupported);
@@ -307,5 +393,5 @@ ByteVector UdsDispatcher::handle_routine_control(const ByteVector& request)
 
 ByteVector UdsDispatcher::negative_response(std::uint8_t sid, std::uint8_t nrc)
 {
-    return ByteVector {0x7F, sid, nrc};
+    return ByteVector {kSidNegativeResponse, sid, nrc};
 }

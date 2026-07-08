@@ -4,12 +4,13 @@
 
 DiagnosticServer::DiagnosticServer(DiagnosticConfig config)
     : config_(std::move(config))
-    , dispatcher_(did_manager_, session_manager_)
+    , dispatcher_(did_manager_, dtc_manager_, session_manager_)
     , tcp_server_(config_.port, [this](const std::string& request) {
         return dispatcher_.handle_line(request);
     })
 {
     did_manager_.reset_defaults(config_.vin);
+    dtc_manager_.reset_defaults();
 }
 
 void DiagnosticServer::run()
