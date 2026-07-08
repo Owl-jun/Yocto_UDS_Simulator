@@ -18,9 +18,14 @@ private:
     ByteVector handle_read_did(const ByteVector& request);
     ByteVector handle_write_did(const ByteVector& request);
     ByteVector handle_read_dtc_information(const ByteVector& request);
+    ByteVector handle_security_access(const ByteVector& request);
+    ByteVector handle_routine_control(const ByteVector& request);
 
     static ByteVector negative_response(std::uint8_t sid, std::uint8_t nrc);
 
     DidManager& did_manager_;
     SessionManager& session_manager_;
+    bool security_seed_issued_{false};
+    bool security_unlocked_{false};
+    bool self_test_running_{false};
 };
