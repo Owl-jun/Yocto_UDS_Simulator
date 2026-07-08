@@ -191,6 +191,8 @@ printf '11 01\n' | nc 127.0.0.1 5000
 # DTC 읽기
 printf '19 02 FF\n' | nc 127.0.0.1 5000
 ```
+## QEMU 실행 화면
+<img width="1130" height="600" alt="image" src="https://github.com/user-attachments/assets/84028c2b-94e6-4207-baf7-d8cfdae07253" />
 
 ---
 
@@ -253,10 +255,10 @@ runqemu qemux86-64
 * Yocto `meta-diagnostic` layer
 * Yocto application recipe
 * Yocto custom image recipe
-
+* 실제 Yocto `bitbake diagnostic-image` 빌드 검증
+  
 남은 작업 후보:
 
-* 실제 Yocto `bitbake diagnostic-image` 빌드 검증
 * Tester 전용 클라이언트 작성
 * DTC 저장소/상태 관리 고도화
 * SecurityAccess(`0x27`) 추가
