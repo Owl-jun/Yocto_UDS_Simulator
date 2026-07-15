@@ -21,6 +21,7 @@ Yocto QEMU 이미지에 포함하기 위한 `meta-diagnostic` 레이어와 syste
 * AUTOSAR DCM 구조를 Linux 환경에 적용
 
 ---
+
 ## Quick Start
 - clone this repository
 - read document `Development_Environment.md` to install
@@ -34,6 +35,69 @@ Yocto QEMU 이미지에 포함하기 위한 `meta-diagnostic` 레이어와 syste
 
 ## Tester GUI Test Example
 <img width="1130" height="600" alt="image" src="./images/image.png" />
+
+---
+
+## 구현된 UDS 서비스
+
+| SID | 서비스 | 현재 동작 |
+| --- | --- | --- |
+| `0x10` | Diagnostic Session Control | Default Session(`0x01`), Extended Session(`0x03`) 지원 |
+| `0x11` | ECU Reset | Hard Reset(`0x01`), Soft Reset(`0x03`) 시뮬레이션. 세션을 Default로 복귀 |
+| `0x14` | ClearDiagnosticInformation | Extended Session에서 전체 DTC 그룹(`FF FF FF`) 삭제 지원 |
+| `0x19` | ReadDTCInformation | `reportDTCByStatusMask(0x02)` 지원. status mask에 맞는 저장 DTC 반환 |
+| `0x22` | ReadDataByIdentifier | 등록된 DID 값 읽기 |
+| `0x27` | SecurityAccess | Extended Session에서 seed(`0x01`) 요청, key(`0x02`) 전송 지원 |
+| `0x2E` | WriteDataByIdentifier | Extended Session에서만 등록된 DID 값 쓰기 |
+| `0x31` | RoutineControl | SecurityAccess 성공 후 self-test routine `0xFF00` 시작/중지/결과 조회 지원 |
+
+지원하지 않는 SID는 negative response `7F <SID> 11`을 반환합니다.
+
+SecurityAccess 데모 seed는 `12 34`이고 key는 각 byte를 `0xFF`와 XOR한 `ED CB`입니다.
+
+---
+
+## 기본 DID
+
+| DID | 내용 | 기본값 |
+| --- | --- | --- |
+| `F190` | VIN | `config/diagnostic.conf`의 `VIN` |
+| `F187` | SW Version | `SW-1.0.0` |
+| `F188` | HW Version | `HW-QEMU-X86_64` |
+| `F18C` | Serial Number | `SIM-0001` |
+
+등록되지 않은 DID 읽기/쓰기는 negative response `7F <SID> 31`을 반환합니다.
+
+---
+
+## 예시 요청
+
+```bash
+# VIN 읽기
+printf '22 F1 90\n' | nc 127.0.0.1 5000
+
+# Extended Session 진입
+printf '10 03\n' | nc 127.0.0.1 5000
+
+# 같은 연결에서 Serial Number 쓰기 후 읽기
+printf '10 03\n2E F1 8C 41 42 43\n22 F1 8C\n' | nc 127.0.0.1 5000
+
+# ECU Reset 시뮬레이션
+printf '11 01\n' | nc 127.0.0.1 5000
+
+# DTC 읽기
+printf '19 02 FF\n' | nc 127.0.0.1 5000
+
+# confirmedDTC(status 0x08)만 읽기
+printf '19 02 08\n' | nc 127.0.0.1 5000
+
+# Extended Session에서 전체 DTC 삭제 후 다시 읽기
+printf '10 03\n14 FF FF FF\n19 02 FF\n' | nc 127.0.0.1 5000
+
+# SecurityAccess 후 self-test routine 시작/결과 조회/중지
+printf '10 03\n27 01\n27 02 ED CB\n31 01 FF 00\n31 03 FF 00\n31 02 FF 00\n' | nc 127.0.0.1 5000
+```
+---
 
 ## 개발 환경
 
@@ -175,68 +239,6 @@ printf '10 03\n2E F1 8C 41 42 43\n22 F1 8C\n' | nc 127.0.0.1 5000
 50 03
 6E F1 8C
 62 F1 8C 41 42 43
-```
-
----
-
-## 구현된 UDS 서비스
-
-| SID | 서비스 | 현재 동작 |
-| --- | --- | --- |
-| `0x10` | Diagnostic Session Control | Default Session(`0x01`), Extended Session(`0x03`) 지원 |
-| `0x11` | ECU Reset | Hard Reset(`0x01`), Soft Reset(`0x03`) 시뮬레이션. 세션을 Default로 복귀 |
-| `0x14` | ClearDiagnosticInformation | Extended Session에서 전체 DTC 그룹(`FF FF FF`) 삭제 지원 |
-| `0x19` | ReadDTCInformation | `reportDTCByStatusMask(0x02)` 지원. status mask에 맞는 저장 DTC 반환 |
-| `0x22` | ReadDataByIdentifier | 등록된 DID 값 읽기 |
-| `0x27` | SecurityAccess | Extended Session에서 seed(`0x01`) 요청, key(`0x02`) 전송 지원 |
-| `0x2E` | WriteDataByIdentifier | Extended Session에서만 등록된 DID 값 쓰기 |
-| `0x31` | RoutineControl | SecurityAccess 성공 후 self-test routine `0xFF00` 시작/중지/결과 조회 지원 |
-
-지원하지 않는 SID는 negative response `7F <SID> 11`을 반환합니다.
-
-SecurityAccess 데모 seed는 `12 34`이고 key는 각 byte를 `0xFF`와 XOR한 `ED CB`입니다.
-
----
-
-## 기본 DID
-
-| DID | 내용 | 기본값 |
-| --- | --- | --- |
-| `F190` | VIN | `config/diagnostic.conf`의 `VIN` |
-| `F187` | SW Version | `SW-1.0.0` |
-| `F188` | HW Version | `HW-QEMU-X86_64` |
-| `F18C` | Serial Number | `SIM-0001` |
-
-등록되지 않은 DID 읽기/쓰기는 negative response `7F <SID> 31`을 반환합니다.
-
----
-
-## 예시 요청
-
-```bash
-# VIN 읽기
-printf '22 F1 90\n' | nc 127.0.0.1 5000
-
-# Extended Session 진입
-printf '10 03\n' | nc 127.0.0.1 5000
-
-# 같은 연결에서 Serial Number 쓰기 후 읽기
-printf '10 03\n2E F1 8C 41 42 43\n22 F1 8C\n' | nc 127.0.0.1 5000
-
-# ECU Reset 시뮬레이션
-printf '11 01\n' | nc 127.0.0.1 5000
-
-# DTC 읽기
-printf '19 02 FF\n' | nc 127.0.0.1 5000
-
-# confirmedDTC(status 0x08)만 읽기
-printf '19 02 08\n' | nc 127.0.0.1 5000
-
-# Extended Session에서 전체 DTC 삭제 후 다시 읽기
-printf '10 03\n14 FF FF FF\n19 02 FF\n' | nc 127.0.0.1 5000
-
-# SecurityAccess 후 self-test routine 시작/결과 조회/중지
-printf '10 03\n27 01\n27 02 ED CB\n31 01 FF 00\n31 03 FF 00\n31 02 FF 00\n' | nc 127.0.0.1 5000
 ```
 
 ---
