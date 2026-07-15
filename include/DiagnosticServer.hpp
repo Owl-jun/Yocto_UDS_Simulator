@@ -7,6 +7,8 @@
 #include "TcpServer.hpp"
 #include "UdsDispatcher.hpp"
 
+#include <mutex>
+
 class DiagnosticServer {
 public:
     explicit DiagnosticServer(DiagnosticConfig config);
@@ -19,5 +21,6 @@ private:
     DtcManager dtc_manager_;
     SessionManager session_manager_;
     UdsDispatcher dispatcher_;
+    std::mutex dispatcher_mutex_;
     TcpServer tcp_server_;
 };

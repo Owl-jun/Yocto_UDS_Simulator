@@ -22,6 +22,12 @@ Yocto QEMU 이미지에 포함하기 위한 `meta-diagnostic` 레이어와 syste
 
 ---
 
+## QEMU Test Example
+<img width="1130" height="600" alt="image" src="https://github.com/user-attachments/assets/84028c2b-94e6-4207-baf7-d8cfdae07253" />
+
+## Tester GUI Test Example
+<img width="1130" height="600" alt="image" src="./images/image.png" />
+
 ## 개발 환경
 
 | 항목 | 내용 |
@@ -97,6 +103,7 @@ cd /home/seokjunkang/dev/Yocto_UDS_Simulator
 
 cmake -S . -B build
 cmake --build build
+ctest --test-dir build --output-on-failure
 
 ./build/diagnosticd config/diagnostic.conf
 ```
@@ -127,6 +134,25 @@ printf '22 F1 90\n' | nc 127.0.0.1 5000
 ```text
 62 F1 90 4B 4D 48 30 30 30 30 30 30 30 30 30 30 30 30 30 30
 ```
+
+전용 Tester 클라이언트도 사용할 수 있습니다.
+
+```bash
+tools/uds_tester.py
+uds> 10 03
+uds> 14 FF FF FF
+uds> 19 02 FF
+uds> quit
+```
+
+GUI Tester는 UDS 서비스를 자연어 버튼과 해석된 응답으로 보여줍니다.
+
+```bash
+tools/uds_gui.py
+```
+
+예를 들어 `Enter Extended Session`, `Read All DTCs`, `Clear All DTCs` 버튼을
+누르면 요청/응답 의미와 raw hex가 함께 기록됩니다.
 
 세션 상태는 같은 TCP 연결 안에서 유지됩니다. `WriteDataByIdentifier`는
 Extended Session에서만 허용되므로, 아래처럼 같은 연결에서 먼저 `10 03`을
@@ -205,8 +231,6 @@ printf '10 03\n14 FF FF FF\n19 02 FF\n' | nc 127.0.0.1 5000
 # SecurityAccess 후 self-test routine 시작/결과 조회/중지
 printf '10 03\n27 01\n27 02 ED CB\n31 01 FF 00\n31 03 FF 00\n31 02 FF 00\n' | nc 127.0.0.1 5000
 ```
-## QEMU 실행 화면
-<img width="1130" height="600" alt="image" src="https://github.com/user-attachments/assets/84028c2b-94e6-4207-baf7-d8cfdae07253" />
 
 ---
 
@@ -242,9 +266,9 @@ source oe-init-build-env
 bitbake-layers add-layer /home/seokjunkang/dev/Yocto_UDS_Simulator/yocto/meta-diagnostic
 bitbake diagnostic-image
 
-runqemu diagnostic-image nographic
+runqemu diagnostic-image slirp nographic
 # 위 명령어에서 qemu가 이미지를 찾지 못할 시 직접 디렉터리 입력하여 수행
-runqemu tmp/deploy/images/qemux86-64/diagnostic-image-qemux86-64.rootfs.qemuboot.conf nographic 
+runqemu tmp/deploy/images/qemux86-64/diagnostic-image-qemux86-64.rootfs.qemuboot.conf slirp nographic
 ```
 
 부팅 후 systemd가 `diagnostic.service`를 통해 아래 명령을 실행합니다.
@@ -252,6 +276,32 @@ runqemu tmp/deploy/images/qemux86-64/diagnostic-image-qemux86-64.rootfs.qemuboot
 ```bash
 /usr/bin/diagnosticd /etc/diagnostic.conf
 ```
+
+QEMU 안에서 서버 상태를 확인합니다.
+
+```bash
+systemctl status diagnostic
+ss -ltnp | grep 5000
+```
+
+이 이미지의 `slirp` 네트워크 설정은 guest `5000`번 포트를 host
+`127.0.0.1:5000`으로 포워딩합니다. 따라서 QEMU는 계속 켜둔 상태에서,
+호스트 터미널을 하나 더 열고 Tester를 실행합니다.
+
+```bash
+tools/uds_tester.py --host 127.0.0.1 --port 5000
+uds> 10 03
+uds> 14 FF FF FF
+```
+
+GUI로 볼 수도 있습니다.
+
+```bash
+tools/uds_gui.py
+```
+
+포트 포워딩 없이 host에서 `127.0.0.1:5000`으로 보내면 QEMU guest가 아니라
+host 자신의 5000번 포트로 접속합니다.
 
 ---
 
@@ -274,9 +324,7 @@ runqemu tmp/deploy/images/qemux86-64/diagnostic-image-qemux86-64.rootfs.qemuboot
 * Yocto application recipe
 * Yocto custom image recipe
 * 실제 Yocto `bitbake diagnostic-image` 빌드 검증
-  
-남은 작업 후보:
-
 * Tester 전용 클라이언트 작성
+* GUI Tester 작성
 * 단위 테스트 추가
 * 여러 클라이언트 동시 처리

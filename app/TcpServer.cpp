@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include <stdexcept>
 #include <sys/socket.h>
+#include <thread>
 #include <unistd.h>
 
 TcpServer::TcpServer(std::uint16_t port, RequestHandler handler)
@@ -53,10 +54,12 @@ void TcpServer::run()
             continue;
         }
 
-        Logger::info("Client connected");
-        handle_client(client_fd);
-        ::close(client_fd);
-        Logger::info("Client disconnected");
+        std::thread([this, client_fd]() {
+            Logger::info("Client connected");
+            handle_client(client_fd);
+            ::close(client_fd);
+            Logger::info("Client disconnected");
+        }).detach();
     }
 }
 
