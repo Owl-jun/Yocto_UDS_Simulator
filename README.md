@@ -21,6 +21,13 @@ Yocto QEMU 이미지에 포함하기 위한 `meta-diagnostic` 레이어와 syste
 * AUTOSAR DCM 구조를 Linux 환경에 적용
 
 ---
+## Quick Start
+- clone this repository
+- read document `Development_Environment.md` to install
+- install all dependancy
+- `runqemu diagnostic-image`
+- `./tools/uds_gui.py` or type `nc 127.0.0.1 5000` in qemu cmd line
+- enjoy UDS Simulate
 
 ## QEMU Test Example
 <img width="1130" height="600" alt="image" src="https://github.com/user-attachments/assets/84028c2b-94e6-4207-baf7-d8cfdae07253" />
